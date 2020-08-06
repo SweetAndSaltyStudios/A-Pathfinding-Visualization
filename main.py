@@ -1,6 +1,8 @@
 import pygame
 import math
 
+from queue import PriorityQueue
+
 WIDTH = 800
 
 CANVAS = pygame.display.set_mode((WIDTH, WIDTH))
@@ -78,16 +80,88 @@ class Cell:
         pygame.draw.rect(canvas, self.color, (self.x, self.y, self.width, self.width))
 
     def update_neighbours(self, grid):
-        pass
+        
+        self.neighbours = []
+
+        if self.row < self.total_rows - 1 and not grid[self.row + 1][self.column].is_barrier():
+            self.neighbours.append(grid[self.row + 1][self.column])
+
+        if self.row > 0 and not grid[self.row - 1][self.column].is_barrier():
+            self.neighbours.append(grid[self.row - 1][self.column])
+
+        if self.column < self.total_rows - 1 and not grid[self.row][self.column + 1].is_barrier():
+            self.neighbours.append(grid[self.row][self.column + 1])
+
+        if self.column > 0 and not grid[self.row][self.column - 1].is_barrier():
+            self.neighbours.append(grid[self.row][self.column - 1])
 
     def __lt__(self, other):
         return False
 
-def heurastic(point_1, pooint_2):
+def get_h_score(point_1, point_2):
 
     x_1, y_1 = point_1
     x_2, y_2 = point_2
-    return abs((x_1 - x_2) + abs(y_1 - y_2))
+    
+    return abs(x_1 - x_2) + abs(y_1 - y_2)
+
+def reconstruct_path(previous_cells, current_cell, draw):
+    while current_cell in previous_cells:
+        current_cell = previous_cells[current_cell]
+        current_cell.make_path()
+        draw()
+
+def algorithm(draw, grid, start_cell, end_cell):
+    
+    count = 0
+    open_set = PriorityQueue()
+    open_set.put((0, count, start_cell))
+    previous_cells = {}
+
+    g_score = { cell: float("inf") for row in grid for cell in row }
+    g_score[start_cell] = 0
+
+    f_score = { cell: float("inf") for row in grid for cell in row }
+    f_score[start_cell] = get_h_score(start_cell.get_position(), end_cell.get_position())
+
+    open_set_hash = { start_cell }
+
+    while not open_set.empty():
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+
+        current_cell = open_set.get()[2]
+        open_set_hash.remove(current_cell)
+
+        if current_cell == end_cell:
+            start_cell.make_start()
+            end_cell.make_end()
+            reconstruct_path(previous_cells, end_cell, draw)
+            return True
+
+        for neighbour in current_cell.neighbours:
+            temp_g_score = g_score[current_cell] + 1
+
+            if temp_g_score < g_score[neighbour]:
+                previous_cells[neighbour] = current_cell
+                g_score[neighbour] = temp_g_score
+                f_score[neighbour] = temp_g_score + get_h_score(neighbour.get_position(), end_cell.get_position())
+
+                if neighbour not in open_set_hash:
+                    count += 1
+                    open_set.put((f_score[neighbour], count, neighbour))
+                    open_set_hash.add(neighbour)
+                    neighbour.make_open()
+
+        draw()
+
+        if current_cell != start_cell:
+            current_cell.make_closed()
+
+    return False
+
+
 
 def make_grid(rows, width):
 
@@ -140,7 +214,6 @@ def main(canvas, width):
     end_cell = None
     
     is_running = True
-    is_started = False
 
     while is_running:
 
@@ -150,9 +223,6 @@ def main(canvas, width):
            
             if event.type == pygame.QUIT:
                 is_running = False
-
-            if is_started:
-                continue
 
             if pygame.mouse.get_pressed()[0]:
                 position = pygame.mouse.get_pos()
@@ -182,9 +252,17 @@ def main(canvas, width):
                      end_cell = None
 
             if event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_SPACE and not is_started:
-                       
+                if event.key == pygame.K_SPACE and start_cell and end_cell:
+                    for row in grid:
+                        for cell in row:
+                            cell.update_neighbours(grid)
 
+                    algorithm(lambda: draw(canvas, grid ,ROWS, width), grid, start_cell, end_cell)
+
+                if(event.key == pygame.K_ESCAPE):
+                    start_cell = None
+                    end_cell = None
+                    grid = make_grid(ROWS, width)
     pygame.quit()
 
 main(CANVAS, WIDTH)
